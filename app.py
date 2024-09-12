@@ -8,7 +8,7 @@ import requests
 import tiktoken
 from flask import Flask, request, Response, stream_with_context, jsonify
 from flask_cors import CORS
-from functools import lru_cache
+from functools import lru_cache,wraps
 from concurrent.futures import ThreadPoolExecutor
 
 app = Flask(__name__)
@@ -85,7 +85,7 @@ def get_notdiamond_headers():
         'accept': 'text/event-stream',
         'accept-language': 'zh-CN,zh;q=0.9',
         'content-type': 'application/json',
-        'next-action': get_env_or_file('NEXT_ACTION', 'next_action.txt'),
+        'next-action': get_env_or_file('NEXTACTION', 'next_action.txt'),
         'user-agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                        'AppleWebKit/537.36 (KHTML, like Gecko) '
                        'Chrome/128.0.0.0 Safari/537.36'),
@@ -389,7 +389,7 @@ def generate_stream_response(response, model, prompt_tokens):
 
 
 
-@app.route('/v1/models', methods=['GET'])
+@app.route('/hf/v1/models', methods=['GET'])
 def proxy_models():
     models = [
         {
@@ -407,7 +407,23 @@ def proxy_models():
         "data": models
     })
 
-@app.route('/v1/chat/completions', methods=['POST'])
+def verify_key(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return jsonify({"error": "No authorization header"}), 401
+        try:
+            prefix, token = auth_header.split()
+            if prefix.lower() != "bearer" or token != os.environ.get('ACCESSTOKEN'):
+                return jsonify({"error": "6"}), 400
+        except ValueError:
+            return jsonify({"error": "6"}), 400
+        return f(*args, **kwargs)
+    return decorated_function
+
+@app.route('/hf/v1/chat/completions', methods=['POST'])
+@verify_key
 def handle_request():
     """
     处理到 '/v1/chat/completions' 端点的 POST 请求。
@@ -422,7 +438,7 @@ def handle_request():
         messages = request_data.get('messages', [])
         model_id = request_data.get('model', '')
         model_info = MODEL_INFO.get(model_id, {})
-        user_id = get_env_or_file('USER_ID', 'user_id.txt')
+        user_id = get_env_or_file('USERID', 'user_id.txt')
         stream = request_data.get('stream', False)
 
         prompt_tokens = count_message_tokens(messages, request_data.get('model', 'gpt-4o'))
@@ -460,5 +476,5 @@ def handle_request():
         }), 500
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 7860))
     app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
