@@ -505,7 +505,8 @@ def handle_request():
         prompt_tokens = count_message_tokens(messages, request_data.get('model', 'gpt-4o'))
         user_id = os.getenv('user_id')
         access_token = os.getenv('access_token')
-        #access_token, refresh_token, user_id = notdiamond_refresh_token(refresh_token)
+        refresh_token = os.getenv('refresh_token')
+        access_token, refresh_token, user_id = notdiamond_refresh_token(refresh_token)
         headers = get_notdiamond_headers(access_token, user_id)
 
         payload = {
