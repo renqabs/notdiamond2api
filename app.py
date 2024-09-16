@@ -1,8 +1,10 @@
+import urllib.parse
 import uuid
 import json
 import time
 import os
 import random
+import base64
 import re
 import requests
 import tiktoken
@@ -15,6 +17,73 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 executor = ThreadPoolExecutor(max_workers=10)
+
+token_headers = {
+    'accept': '*/*',
+    'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+    'apikey': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwdWNraG9neWNyeGNib216bndvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDcyNDYwMzksImV4cCI6MjAyMjgyMjAzOX0.tvlGT7NZY8bijMjNIu1WhAtPnSKuDeYhtveo4DRt6xg',
+    'authorization': 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwdWNraG9neWNyeGNib216bndvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDcyNDYwMzksImV4cCI6MjAyMjgyMjAzOX0.tvlGT7NZY8bijMjNIu1WhAtPnSKuDeYhtveo4DRt6xg',
+    'content-type': 'application/json;charset=UTF-8',
+    'origin': 'https://chat.notdiamond.ai',
+    'priority': 'u=1, i',
+    'referer': 'https://chat.notdiamond.ai/',
+    'sec-ch-ua': '"Chromium";v="128", "Not;A=Brand";v="24", "Microsoft Edge";v="128"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"Windows"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'cross-site',
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36 Edg/128.0.0.0',
+    'x-client-info': 'supabase-ssr/0.4.1',
+    'x-supabase-api-version': '2024-01-01'
+}
+
+
+def notdiamond_login(username: str, password: str):
+    login_url = 'https://spuckhogycrxcbomznwo.supabase.co/auth/v1/token?grant_type=password'
+    login_info = {
+        "email": username,
+        "password": password,
+        "gotrue_meta_security": {}
+    }
+
+    response = requests.post(login_url, headers=token_headers, json=login_info)
+    if response.status_code == 200:
+        rsp_info = response.json()
+        print(f'access_token:{rsp_info.get("access_token")}\n'
+              f'refresh_token:{rsp_info.get("refresh_token")}\n'
+              f'user_id:{rsp_info["user"].get("id")}'
+              )
+        return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
+
+
+def base64url_encode(data):
+    return base64.urlsafe_b64encode(data.encode()).rstrip(b'=').decode()
+
+
+def notdiamond_refresh_token(rt: str):
+    url = 'https://spuckhogycrxcbomznwo.supabase.co/auth/v1/token?grant_type=refresh_token'
+    rt_data = {
+        'refresh_token': rt
+    }
+    response = requests.post(url, headers=token_headers, json=rt_data)
+    if response.status_code == 200:
+        rsp_info = response.json()
+        print(f'access_token:{rsp_info.get("access_token")}\n'
+              f'refresh_token:{rsp_info.get("refresh_token")}\n'
+              f'user_id:{rsp_info["user"].get("id")}'
+              )
+        return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
+
+
+def fomat_cookies(access_token: str, user_id: str):
+    post_hog = {"distinct_id": f"{user_id}", "$sesid": [time.time_ns() // 1_000_000, f"{uuid.uuid4()}", time.time_ns() // 1_000_000]}
+
+    cookies = {"sb-spuckhogycrxcbomznwo-auth-token": f"base64-{access_token}",
+               "ph_phc_6W0u6c0xWeMUXimZaNTkVe3ShM36Kk6eeo1ig2zIrhG_posthog": urllib.parse.quote(json.dumps(post_hog))}
+    cookie_string = "; ".join(f"{key}={value}" for key, value in cookies.items())
+    print(cookie_string)
+    return cookie_string
 
 @lru_cache(maxsize=10)
 def read_file(filename):
@@ -39,6 +108,7 @@ def read_file(filename):
     except Exception as e:
         print(f"读取文件 {filename} 时发生错误: {e}")
         return ""
+
 
 def get_env_or_file(env_var, filename):
     """
@@ -69,10 +139,10 @@ def get_notdiamond_url():
     返回：
         str: 随机选择的 URL 字符串。
     """
-    return random.choice(NOTDIAMOND_URLS)
+    return 'https://chat.notdiamond.ai'
 
 @lru_cache(maxsize=1)
-def get_notdiamond_headers():
+def get_notdiamond_headers(access_token,user_id):
     """
     构造并返回调用 notdiamond API 所需的请求头。
 
@@ -81,15 +151,16 @@ def get_notdiamond_headers():
     返回：
         dict: 包含用于请求的头信息的字典。
     """
+    cookies = fomat_cookies(access_token, user_id)
     return {
         'accept': 'text/event-stream',
         'accept-language': 'zh-CN,zh;q=0.9',
         'content-type': 'application/json',
-        'next-action': get_env_or_file('NEXTACTION', 'next_action.txt'),
+        'next-action': '4e63dabc37fef18cae74cbfd41d1bace49acf47e',
         'user-agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
                        'AppleWebKit/537.36 (KHTML, like Gecko) '
                        'Chrome/128.0.0.0 Safari/537.36'),
-        'cookie': get_env_or_file('COOKIES', 'cookies.txt')
+        'cookie': cookies
     }
 
 MODEL_INFO = {
@@ -415,7 +486,7 @@ def verify_key(f):
             return jsonify({"error": "No authorization header"}), 401
         try:
             prefix, token = auth_header.split()
-            if prefix.lower() != "bearer" or token != os.environ.get('ACCESSTOKEN'):
+            if prefix.lower() != "bearer" or token != os.getenv('ACCESSTOKEN'):
                 return jsonify({"error": "6"}), 400
         except ValueError:
             return jsonify({"error": "6"}), 400
@@ -438,13 +509,14 @@ def handle_request():
         messages = request_data.get('messages', [])
         model_id = request_data.get('model', '')
         model_info = MODEL_INFO.get(model_id, {})
-        user_id = get_env_or_file('USERID', 'user_id.txt')
         stream = request_data.get('stream', False)
 
         prompt_tokens = count_message_tokens(messages, request_data.get('model', 'gpt-4o'))
+        user_id = os.getenv('user_id')
+        access_token = os.getenv('access_token')
+        #access_token, refresh_token, user_id = notdiamond_refresh_token(refresh_token)
+        headers = get_notdiamond_headers(access_token, user_id)
 
-        headers = get_notdiamond_headers()
-        
         payload = {
             "messages": messages,
             "provider": {
@@ -452,10 +524,7 @@ def handle_request():
                 "provider": model_info.get('provider', '')
             },
             "stream": stream,
-            "frequency_penalty": request_data.get('frequency_penalty', 0),
-            "presence_penalty": request_data.get('presence_penalty', 0),
-            "temperature": request_data.get('temperature', 0.8),
-            "top_p": request_data.get('top_p', 1),
+            "temperature": request_data.get('temperature', 1),
             "user_id": user_id
         }
         url = get_notdiamond_url()
@@ -475,6 +544,8 @@ def handle_request():
             'details': str(e)
         }), 500
 
+
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 7860))
+    os.environ['access_token'], os.environ['refresh_token'], os.environ['user_id'] = notdiamond_login(os.getenv('USERNAME'), os.getenv('PASSWORD'))
     app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
