@@ -157,13 +157,33 @@ def get_notdiamond_headers(access_token,user_id):
     }
 
 MODEL_INFO = {
+    "gpt-4o": {
+        "provider": "openai",
+        "mapping": "gpt-4o"
+    },
     "gpt-4-turbo-2024-04-09": {
         "provider": "openai",
         "mapping": "gpt-4-turbo-2024-04-09"
     },
-    "gemini-1.5-pro-exp-0801": {
+    "gpt-4o-mini": {
+        "provider": "openai",
+        "mapping": "gpt-4o-mini"
+    },
+    "claude-3-haiku-20240307": {
+        "provider": "anthropic",
+        "mapping": "anthropic.claude-3-haiku-20240307-v1:0"
+    },
+    "claude-3-5-sonnet-20240620": {
+        "provider": "anthropic",
+        "mapping": "anthropic.claude-3-5-sonnet-20240620-v1:0"
+    },
+    "gemini-1.5-pro-latest": {
         "provider": "google",
-        "mapping": "models/gemini-1.5-pro-exp-0801"
+        "mapping": "models/gemini-1.5-pro-latest"
+    },
+    "gemini-1.5-flash-latest": {
+        "provider": "google",
+        "mapping": "models/gemini-1.5-flash-latest"
     },
     "Meta-Llama-3.1-70B-Instruct-Turbo": {
         "provider": "togetherai",
@@ -176,26 +196,6 @@ MODEL_INFO = {
     "llama-3.1-sonar-large-128k-online": {
         "provider": "perplexity",
         "mapping": "llama-3.1-sonar-large-128k-online"
-    },
-    "gemini-1.5-pro-latest": {
-        "provider": "google",
-        "mapping": "models/gemini-1.5-pro-latest"
-    },
-    "claude-3-5-sonnet-20240620": {
-        "provider": "anthropic",
-        "mapping": "anthropic.claude-3-5-sonnet-20240620-v1:0"
-    },
-    "claude-3-haiku-20240307": {
-        "provider": "anthropic",
-        "mapping": "anthropic.claude-3-haiku-20240307-v1:0"
-    },
-    "gpt-4o-mini": {
-        "provider": "openai",
-        "mapping": "gpt-4o-mini"
-    },
-    "gpt-4o": {
-        "provider": "openai",
-        "mapping": "gpt-4o"
     },
     "mistral-large-2407": {
         "provider": "mistral",
@@ -513,13 +513,8 @@ def handle_request():
 
         payload = {
             "messages": messages,
-            "provider": {
-                "model": model_id,
-                "provider": model_info.get('provider', '')
-            },
-            "stream": stream,
-            "temperature": request_data.get('temperature', 1),
-            "user_id": user_id
+            "model": model_info.get('mapping', ''),
+            "temperature": request_data.get('temperature', 0.8),
         }
         url = get_notdiamond_url()
         
