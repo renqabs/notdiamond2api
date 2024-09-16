@@ -50,10 +50,6 @@ def notdiamond_login(username: str, password: str):
     response = requests.post(login_url, headers=token_headers, json=login_info)
     if response.status_code == 200:
         rsp_info = response.json()
-        print(f'access_token:{rsp_info.get("access_token")}\n'
-              f'refresh_token:{rsp_info.get("refresh_token")}\n'
-              f'user_id:{rsp_info["user"].get("id")}'
-              )
         return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
 
 
@@ -69,10 +65,6 @@ def notdiamond_refresh_token(rt: str):
     response = requests.post(url, headers=token_headers, json=rt_data)
     if response.status_code == 200:
         rsp_info = response.json()
-        print(f'access_token:{rsp_info.get("access_token")}\n'
-              f'refresh_token:{rsp_info.get("refresh_token")}\n'
-              f'user_id:{rsp_info["user"].get("id")}'
-              )
         return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
 
 
@@ -82,7 +74,6 @@ def fomat_cookies(access_token: str, user_id: str):
     cookies = {"sb-spuckhogycrxcbomznwo-auth-token": f"base64-{access_token}",
                "ph_phc_6W0u6c0xWeMUXimZaNTkVe3ShM36Kk6eeo1ig2zIrhG_posthog": urllib.parse.quote(json.dumps(post_hog))}
     cookie_string = "; ".join(f"{key}={value}" for key, value in cookies.items())
-    print(cookie_string)
     return cookie_string
 
 @lru_cache(maxsize=10)
