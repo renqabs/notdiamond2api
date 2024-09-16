@@ -66,6 +66,8 @@ def notdiamond_refresh_token(rt: str):
     if response.status_code == 200:
         rsp_info = response.json()
         return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
+    else:
+        return notdiamond_login(os.getenv('USERNAME'), os.getenv('PASSWORD'))
 
 
 def fomat_cookies(access_token: str, user_id: str):
