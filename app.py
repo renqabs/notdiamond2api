@@ -509,6 +509,7 @@ def handle_request():
         access_token = os.getenv('access_token')
         refresh_token = os.getenv('refresh_token')
         access_token, refresh_token, user_id = notdiamond_refresh_token(refresh_token)
+        os.environ['access_token'], os.environ['refresh_token'], os.environ['user_id'] = access_token, refresh_token, user_id
         headers = get_notdiamond_headers(access_token, user_id)
 
         payload = {
