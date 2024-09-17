@@ -20,7 +20,7 @@
 - claude-3-haiku-20240307
 - claude-3-5-sonnet-20240620
 - gemini-1.5-pro-latest
-- gemini-1.5-pro-exp-0801
+- gemini-1.5-flash-latest
 - Meta-Llama-3.1-70B-Instruct-Turbo
 - Meta-Llama-3.1-405B-Instruct-Turbo
 - llama-3.1-sonar-large-128k-online
