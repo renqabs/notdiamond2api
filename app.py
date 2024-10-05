@@ -536,7 +536,7 @@ def handle_request():
             "temperature": request_data.get('temperature', 0.8),
         }
         # 指定DNS服务器
-        dns_server = "8.8.8.8"  # 例如使用Google的DNS服务器
+        dns_server = "114.114.114.114"  # 例如使用Google的DNS服务器
 
         # 创建一个使用自定义DNS的session
         session = requests.Session()
