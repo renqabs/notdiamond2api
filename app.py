@@ -50,7 +50,7 @@ def notdiamond_login(username: str, password: str):
     response = requests.post(login_url, headers=token_headers, json=login_info)
     if response.status_code == 200:
         rsp_info = response.json()
-        return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
+        return rsp_info.get("access_token"), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
 
 
 def base64url_encode(data):
@@ -65,7 +65,7 @@ def notdiamond_refresh_token(rt: str):
     response = requests.post(url, headers=token_headers, json=rt_data)
     if response.status_code == 200:
         rsp_info = response.json()
-        return base64url_encode(json.dumps(rsp_info)), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
+        return rsp_info.get("access_token"), rsp_info.get("refresh_token"), rsp_info["user"].get("id")
     else:
         return notdiamond_login(os.getenv('USERNAME'), os.getenv('PASSWORD'))
 
@@ -132,7 +132,7 @@ def get_notdiamond_url():
     返回：
         str: 随机选择的 URL 字符串。
     """
-    return 'https://chat.notdiamond.ai'
+    return 'https://not-diamond-workers.t7-cc4.workers.dev/stream-message'
 
 @lru_cache(maxsize=1)
 def get_notdiamond_headers(access_token,user_id):
@@ -144,16 +144,21 @@ def get_notdiamond_headers(access_token,user_id):
     返回：
         dict: 包含用于请求的头信息的字典。
     """
-    cookies = fomat_cookies(access_token, user_id)
+    # cookies = fomat_cookies(access_token, user_id)
     return {
-        'accept': 'text/event-stream',
-        'accept-language': 'zh-CN,zh;q=0.9',
-        'content-type': 'application/json',
-        'next-action': '4e63dabc37fef18cae74cbfd41d1bace49acf47e',
-        'user-agent': ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
-                       'AppleWebKit/537.36 (KHTML, like Gecko) '
-                       'Chrome/128.0.0.0 Safari/537.36'),
-        'cookie': cookies
+        'accept': '*/*',
+        'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8,en-GB;q=0.7,en-US;q=0.6',
+        'authorization': f'Bearer {access_token}',
+        'origin': 'https://chat.notdiamond.ai',
+        'priority': 'u=1, i',
+        'referer': 'https://chat.notdiamond.ai/',
+        'sec-ch-ua': '"Microsoft Edge";v="129", "Not=A?Brand";v="8", "Chromium";v="129"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': '"Windows"',
+        'sec-fetch-dest': 'empty',
+        'sec-fetch-mode': 'cors',
+        'sec-fetch-site': 'cross-site',
+        'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
     }
 
 MODEL_INFO = {
@@ -354,22 +359,11 @@ def stream_notdiamond_response(response, model):
     生成：
         dict: 来自 notdiamond API 的格式化响应块。
     """
-    buffer = ""
-    last_content = ""
-
     for chunk in response.iter_content(1024):
         if chunk:
-            buffer += chunk.decode('utf-8')
-            lines = buffer.split('\n')
-            buffer = lines.pop()
-            for line in lines:
-                if line.strip():
-                    data, _ = parse_line(line)
-                    if data:
-                        content = extract_content(data, last_content)
-                        if content:
-                            last_content = content
-                            yield create_openai_chunk(content, model)
+            content = chunk.decode('utf-8')
+            if content:
+                yield create_openai_chunk(content, model)
     
     yield create_openai_chunk('', model, 'stop')
 
@@ -519,7 +513,7 @@ def handle_request():
         }
         url = get_notdiamond_url()
         
-        future = executor.submit(requests.post, url, headers=headers, json=[payload], stream=True)
+        future = executor.submit(requests.post, url, headers=headers, json=payload, stream=True)
         response = future.result()
         response.raise_for_status()
 
