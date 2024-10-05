@@ -505,37 +505,62 @@ original_getaddrinfo = socket.getaddrinfo
 
 def custom_dns_resolver(hostname):
     resolver = dns.resolver.Resolver()
-    # 设置您想要使用的DNS服务器列表（这里以Google的公共DNS为例）
-    resolver.nameservers = ['8.8.8.8', '8.8.4.4']
-    # 解析域名，获取A记录
-    answers = resolver.resolve(hostname, 'A')
-    # 返回IP地址的列表
-    return [answer.address for answer in answers]
+    # 设置自定义的DNS服务器列表
+    resolver.nameservers = ['8.8.8.8', '8.8.4.4']  # 这里以Google的公共DNS为例
+    ip_addresses = []
+
+    # 解析 A 记录（IPv4）
+    try:
+        answers = resolver.resolve(hostname, 'A')
+        for rdata in answers:
+            ip_addresses.append((socket.AF_INET, rdata.address))
+    except dns.resolver.NoAnswer:
+        pass  # 如果没有 A 记录，忽略
+
+    # 解析 AAAA 记录（IPv6）
+    try:
+        answers = resolver.resolve(hostname, 'AAAA')
+        for rdata in answers:
+            ip_addresses.append((socket.AF_INET6, rdata.address))
+    except dns.resolver.NoAnswer:
+        pass  # 如果没有 AAAA 记录，忽略
+
+    return ip_addresses
 
 
 def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     try:
-        # 使用自定义DNS解析器获取IP地址列表
-        ip_addresses = custom_dns_resolver(host)
-        results = []
-        for ip in ip_addresses:
-            # 构造getaddrinfo需要的返回格式
-            addrinfo = (family, type, proto, '', (ip, port))
-            results.append(addrinfo)
-        return results
-    except Exception:
-        # 如果自定义解析失败，使用原始的getaddrinfo函数
+        # 使用自定义DNS解析器获取 (address_family, IP地址) 元组列表
+        addrlist = custom_dns_resolver(host)
+        result = []
+
+        for addr_family, ip_address in addrlist:
+            # 如果指定了 family 参数，且与解析到的地址族不匹配，跳过
+            if family != 0 and family != addr_family:
+                continue
+
+            sockaddr = (ip_address, port)
+            # 构造符合 getaddrinfo 返回格式的元组
+            result.append((addr_family, type or socket.SOCK_STREAM, proto or socket.IPPROTO_TCP, '', sockaddr))
+
+        if result:
+            return result
+        else:
+            # 如果没有结果，回退到原始的 getaddrinfo 函数
+            return original_getaddrinfo(host, port, family, type, proto, flags)
+    except Exception as e:
+        # 发生异常时，回退到原始的 getaddrinfo 函数
         return original_getaddrinfo(host, port, family, type, proto, flags)
 
 
 class CustomDNSAdapter(HTTPAdapter):
     def send(self, request, **kwargs):
-        # 在请求发送之前，替换socket.getaddrinfo为自定义函数
+        # 在发送请求之前，替换 socket.getaddrinfo 函数
         socket.getaddrinfo = custom_getaddrinfo
         try:
             response = super(CustomDNSAdapter, self).send(request, **kwargs)
         finally:
-            # 请求完成后，恢复原始的socket.getaddrinfo函数
+            # 请求完成后，恢复原始的 socket.getaddrinfo 函数
             socket.getaddrinfo = original_getaddrinfo
         return response
 
