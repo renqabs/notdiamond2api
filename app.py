@@ -3,7 +3,10 @@ import uuid
 import json
 import time
 import os
-import random
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import socket
+import dns.resolver
 import base64
 import re
 import requests
@@ -480,6 +483,27 @@ def verify_key(f):
         return f(*args, **kwargs)
     return decorated_function
 
+
+def create_dns_custom_adapter(dns_server):
+    class DNSCustomAdapter(HTTPAdapter):
+        def __init__(self, *args, **kwargs):
+            self.dns_server = dns_server
+            super().__init__(*args, **kwargs)
+
+        def send(self, request, **kwargs):
+            custom_resolver = dns.resolver.Resolver(configure=False)
+            custom_resolver.nameservers = [self.dns_server]
+
+            host = request.url.split("://", 1)[1].split("/", 1)[0]
+            try:
+                ip = custom_resolver.resolve(host, 'A')[0].address
+            except dns.resolver.NXDOMAIN:
+                raise requests.exceptions.RequestException(f"DNS resolution failed for {host}")
+
+            request.url = request.url.replace(host, ip)
+            return super().send(request, **kwargs)
+
+
 @app.route('/hf/v1/chat/completions', methods=['POST'])
 @verify_key
 def handle_request():
@@ -511,9 +535,28 @@ def handle_request():
             "model": model_info.get('mapping', ''),
             "temperature": request_data.get('temperature', 0.8),
         }
+        # 指定DNS服务器
+        dns_server = "8.8.8.8"  # 例如使用Google的DNS服务器
+
+        # 创建一个使用自定义DNS的session
+        session = requests.Session()
+        adapter = create_dns_custom_adapter(dns_server)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        # 设置重试策略
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
+        )
+        session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
+
+        # 使用修改后的session发送请求
         url = get_notdiamond_url()
-        
-        future = executor.submit(requests.post, url, headers=headers, json=payload, stream=True)
+
+        future = executor.submit(session.post, url, headers=headers, json=payload, stream=True)
         response = future.result()
         response.raise_for_status()
 
