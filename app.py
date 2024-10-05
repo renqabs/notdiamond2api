@@ -1,11 +1,9 @@
+import socket
 import urllib.parse
 import uuid
 import json
 import time
 import os
-from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
-import socket
 import dns.resolver
 import base64
 import re
@@ -13,8 +11,9 @@ import requests
 import tiktoken
 from flask import Flask, request, Response, stream_with_context, jsonify
 from flask_cors import CORS
-from functools import lru_cache,wraps
+from functools import lru_cache, wraps
 from concurrent.futures import ThreadPoolExecutor
+from requests.adapters import HTTPAdapter
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
@@ -74,12 +73,14 @@ def notdiamond_refresh_token(rt: str):
 
 
 def fomat_cookies(access_token: str, user_id: str):
-    post_hog = {"distinct_id": f"{user_id}", "$sesid": [time.time_ns() // 1_000_000, f"{uuid.uuid4()}", time.time_ns() // 1_000_000]}
+    post_hog = {"distinct_id": f"{user_id}",
+                "$sesid": [time.time_ns() // 1_000_000, f"{uuid.uuid4()}", time.time_ns() // 1_000_000]}
 
     cookies = {"sb-spuckhogycrxcbomznwo-auth-token": f"base64-{access_token}",
                "ph_phc_6W0u6c0xWeMUXimZaNTkVe3ShM36Kk6eeo1ig2zIrhG_posthog": urllib.parse.quote(json.dumps(post_hog))}
     cookie_string = "; ".join(f"{key}={value}" for key, value in cookies.items())
     return cookie_string
+
 
 @lru_cache(maxsize=10)
 def read_file(filename):
@@ -121,10 +122,12 @@ def get_env_or_file(env_var, filename):
     """
     return os.getenv(env_var, read_file(filename))
 
+
 NOTDIAMOND_URLS = [
     'https://chat.notdiamond.ai',
     'https://chat.notdiamond.ai/mini-chat'
 ]
+
 
 def get_notdiamond_url():
     """
@@ -137,8 +140,9 @@ def get_notdiamond_url():
     """
     return 'https://not-diamond-workers.t7-cc4.workers.dev/stream-message'
 
+
 @lru_cache(maxsize=1)
-def get_notdiamond_headers(access_token,user_id):
+def get_notdiamond_headers(access_token, user_id):
     """
     构造并返回调用 notdiamond API 所需的请求头。
 
@@ -163,6 +167,7 @@ def get_notdiamond_headers(access_token,user_id):
         'sec-fetch-site': 'cross-site',
         'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0',
     }
+
 
 MODEL_INFO = {
     "gpt-4o": {
@@ -211,6 +216,7 @@ MODEL_INFO = {
     }
 }
 
+
 @lru_cache(maxsize=1)
 def generate_system_fingerprint():
     """
@@ -222,6 +228,7 @@ def generate_system_fingerprint():
         str: 以 'fp_' 开头的唯一系统指纹。
     """
     return f"fp_{uuid.uuid4().hex[:10]}"
+
 
 def create_openai_chunk(content, model, finish_reason=None, usage=None):
     """
@@ -278,6 +285,7 @@ def count_tokens(text, model="gpt-3.5-turbo-0301"):
     except KeyError:
         return len(tiktoken.get_encoding("cl100k_base").encode(text))
 
+
 def count_message_tokens(messages, model="gpt-3.5-turbo-0301"):
     """
     使用指定模型计算给定消息中的总令牌数量。
@@ -291,6 +299,7 @@ def count_message_tokens(messages, model="gpt-3.5-turbo-0301"):
     """
     return sum(count_tokens(str(message), model) for message in messages)
 
+
 def process_dollars(s):
     """
     将每个双美元符号 '$$' 替换为单个美元符号 '$'。
@@ -303,7 +312,9 @@ def process_dollars(s):
     """
     return s.replace('$$', '$')
 
+
 uuid_pattern = re.compile(r'^(\w+):(.*)$')
+
 
 def parse_line(line):
     """
@@ -329,6 +340,7 @@ def parse_line(line):
         print(f"Error processing line: {line}")
         return None, None
 
+
 def extract_content(data, last_content=""):
     """
     从数据中提取和处理内容，根据之前的内容处理不同格式和更新。
@@ -351,6 +363,7 @@ def extract_content(data, last_content=""):
             return last_content
     return ""
 
+
 def stream_notdiamond_response(response, model):
     """
     从 notdiamond API 流式传输和处理响应内容。
@@ -367,8 +380,9 @@ def stream_notdiamond_response(response, model):
             content = chunk.decode('utf-8')
             if content:
                 yield create_openai_chunk(content, model)
-    
+
     yield create_openai_chunk('', model, 'stop')
+
 
 def handle_non_stream_response(response, model, prompt_tokens):
     """
@@ -386,7 +400,7 @@ def handle_non_stream_response(response, model, prompt_tokens):
     """
     full_content = ""
     total_completion_tokens = 0
-    
+
     for chunk in stream_notdiamond_response(response, model):
         if chunk['choices'][0]['delta'].get('content'):
             full_content += chunk['choices'][0]['delta']['content']
@@ -417,6 +431,7 @@ def handle_non_stream_response(response, model, prompt_tokens):
         }
     })
 
+
 def generate_stream_response(response, model, prompt_tokens):
     """
     为服务器发送事件生成流 HTTP 响应。
@@ -432,22 +447,20 @@ def generate_stream_response(response, model, prompt_tokens):
         str: 格式化为 SSE 的 JSON 数据块，或完成指示器。
     """
     total_completion_tokens = 0
-    
+
     for chunk in stream_notdiamond_response(response, model):
         content = chunk['choices'][0]['delta'].get('content', '')
         total_completion_tokens += count_tokens(content, model)
-        
+
         chunk['usage'] = {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": total_completion_tokens,
             "total_tokens": prompt_tokens + total_completion_tokens
         }
-        
+
         yield f"data: {json.dumps(chunk)}\n\n"
-    
+
     yield "data: [DONE]\n\n"
-
-
 
 
 @app.route('/hf/v1/models', methods=['GET'])
@@ -468,6 +481,7 @@ def proxy_models():
         "data": models
     })
 
+
 def verify_key(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -481,27 +495,49 @@ def verify_key(f):
         except ValueError:
             return jsonify({"error": "6"}), 400
         return f(*args, **kwargs)
+
     return decorated_function
 
 
-def create_dns_custom_adapter(dns_server):
-    class DNSCustomAdapter(HTTPAdapter):
-        def __init__(self, *args, **kwargs):
-            self.dns_server = dns_server
-            super().__init__(*args, **kwargs)
+# 保存原始的socket.getaddrinfo函数
+original_getaddrinfo = socket.getaddrinfo
 
-        def send(self, request, **kwargs):
-            custom_resolver = dns.resolver.Resolver(configure=False)
-            custom_resolver.nameservers = [self.dns_server]
 
-            host = request.url.split("://", 1)[1].split("/", 1)[0]
-            try:
-                ip = custom_resolver.resolve(host, 'A')[0].address
-            except dns.resolver.NXDOMAIN:
-                raise requests.exceptions.RequestException(f"DNS resolution failed for {host}")
+def custom_dns_resolver(hostname):
+    resolver = dns.resolver.Resolver()
+    # 设置您想要使用的DNS服务器列表（这里以Google的公共DNS为例）
+    resolver.nameservers = ['8.8.8.8', '8.8.4.4']
+    # 解析域名，获取A记录
+    answers = resolver.resolve(hostname, 'A')
+    # 返回IP地址的列表
+    return [answer.address for answer in answers]
 
-            request.url = request.url.replace(host, ip)
-            return super().send(request, **kwargs)
+
+def custom_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    try:
+        # 使用自定义DNS解析器获取IP地址列表
+        ip_addresses = custom_dns_resolver(host)
+        results = []
+        for ip in ip_addresses:
+            # 构造getaddrinfo需要的返回格式
+            addrinfo = (family, type, proto, '', (ip, port))
+            results.append(addrinfo)
+        return results
+    except Exception:
+        # 如果自定义解析失败，使用原始的getaddrinfo函数
+        return original_getaddrinfo(host, port, family, type, proto, flags)
+
+
+class CustomDNSAdapter(HTTPAdapter):
+    def send(self, request, **kwargs):
+        # 在请求发送之前，替换socket.getaddrinfo为自定义函数
+        socket.getaddrinfo = custom_getaddrinfo
+        try:
+            response = super(CustomDNSAdapter, self).send(request, **kwargs)
+        finally:
+            # 请求完成后，恢复原始的socket.getaddrinfo函数
+            socket.getaddrinfo = original_getaddrinfo
+        return response
 
 
 @app.route('/hf/v1/chat/completions', methods=['POST'])
@@ -527,7 +563,8 @@ def handle_request():
         access_token = os.getenv('access_token')
         refresh_token = os.getenv('refresh_token')
         access_token, refresh_token, user_id = notdiamond_refresh_token(refresh_token)
-        os.environ['access_token'], os.environ['refresh_token'], os.environ['user_id'] = access_token, refresh_token, user_id
+        os.environ['access_token'], os.environ['refresh_token'], os.environ[
+            'user_id'] = access_token, refresh_token, user_id
         headers = get_notdiamond_headers(access_token, user_id)
 
         payload = {
@@ -535,36 +572,23 @@ def handle_request():
             "model": model_info.get('mapping', ''),
             "temperature": request_data.get('temperature', 0.8),
         }
-        # 指定DNS服务器
-        dns_server = "114.114.114.114"  # 例如使用Google的DNS服务器
-
-        # 创建一个使用自定义DNS的session
-        session = requests.Session()
-        adapter = create_dns_custom_adapter(dns_server)
-        session.mount("http://", adapter)
-        session.mount("https://", adapter)
-
-        # 设置重试策略
-        retry_strategy = Retry(
-            total=3,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-            allowed_methods=["HEAD", "GET", "OPTIONS", "POST"]
-        )
-        session.mount("https://", HTTPAdapter(max_retries=retry_strategy))
-
-        # 使用修改后的session发送请求
         url = get_notdiamond_url()
+        # 创建一个会话
+        session = requests.Session()
+        # 为HTTP和HTTPS协议挂载自定义的Adapter
+        session.mount('http://', CustomDNSAdapter())
+        session.mount('https://', CustomDNSAdapter())
 
         future = executor.submit(session.post, url, headers=headers, json=payload, stream=True)
         response = future.result()
         response.raise_for_status()
 
         if stream:
-            return Response(stream_with_context(generate_stream_response(response, model_id, prompt_tokens)), content_type='text/event-stream')
+            return Response(stream_with_context(generate_stream_response(response, model_id, prompt_tokens)),
+                            content_type='text/event-stream')
         else:
             return handle_non_stream_response(response, model_id, prompt_tokens)
-         
+
     except Exception as e:
         return jsonify({
             'error': {'message': 'Internal Server Error', 'type': 'server_error', 'param': None, 'code': None},
@@ -574,5 +598,6 @@ def handle_request():
 
 if __name__ == '__main__':
     port = int(os.environ.get("PORT", 7860))
-    os.environ['access_token'], os.environ['refresh_token'], os.environ['user_id'] = notdiamond_login(os.getenv('USERNAME'), os.getenv('PASSWORD'))
+    os.environ['access_token'], os.environ['refresh_token'], os.environ['user_id'] = notdiamond_login(
+        os.getenv('USERNAME'), os.getenv('PASSWORD'))
     app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
