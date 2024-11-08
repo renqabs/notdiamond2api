@@ -182,13 +182,13 @@ MODEL_INFO = {
         "provider": "openai",
         "mapping": "gpt-4o-mini"
     },
-    "claude-3-haiku-20240307": {
+    "claude-3-5-haiku-20241022": {
         "provider": "anthropic",
-        "mapping": "anthropic.claude-3-haiku-20240307-v1:0"
+        "mapping": "anthropic.claude-3-5-haiku-20241022-v1:0"
     },
-    "claude-3-5-sonnet-20240620": {
+    "claude-3-5-sonnet-20241022": {
         "provider": "anthropic",
-        "mapping": "anthropic.claude-3-5-sonnet-20240620-v1:0"
+        "mapping": "anthropic.claude-3-5-sonnet-20241022-v2:0"
     },
     "gemini-1.5-pro-latest": {
         "provider": "google",
